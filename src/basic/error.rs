@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,6 +14,7 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
 use std::any::Any;
@@ -23,10 +24,12 @@ use std::fmt::{Debug, Display, Formatter};
 
 // -----------------------------------------------
 
+// A convenient kind of result that can contain any type of error
 pub type AnyResult<T> = Result<T, AnyError>;
 
 // -----------------------------------------------
 
+// A convenient kind of error that can wrap anything, including other error
 #[derive(Debug)]
 pub enum AnyError {
 	String(String),
@@ -35,20 +38,29 @@ pub enum AnyError {
 }
 
 impl AnyError {
+	// A convenient function to create an error from string
 	#[cold]
 	#[inline(always)]
 	pub fn from_string<S: Into<String>>(into_string: S) -> Self {
 		Self::String(into_string.into())
 	}
 
+	// A convenient function to create an error from a Box
 	#[cold]
 	#[inline(always)]
 	pub fn from_box(any: Box<dyn Any + Send>) -> Self {
-		Self::Box(any)
+		match any.downcast_ref::<String>() {
+			Some(string) => Self::from_string(string),
+			None => match any.downcast_ref::<&'static str>() {
+				Some(&string) => Self::from_string(string),
+				None => Self::Box(any),
+			},
+		}
 	}
 }
 
 impl Display for AnyError {
+	// A convenient function to print out the error
 	fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
 		match self {
 			AnyError::String(value) => Display::fmt(value, formatter),
@@ -59,6 +71,7 @@ impl Display for AnyError {
 }
 
 impl<E: Error + Send + 'static> From<E> for AnyError {
+	// A convenient function to create an error from anything
 	#[cold]
 	#[inline(always)]
 	fn from(e: E) -> Self {

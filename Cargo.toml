@@ -6,6 +6,9 @@ edition = "2021"
 [profile.dev]
 opt-level = 1
 
+[profile.test]
+opt-level = 0
+
 [profile.release]
 strip = true
 lto = "fat"

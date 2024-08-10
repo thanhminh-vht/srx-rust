@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,10 +14,11 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
+use super::history::{HistoryState, STATE_TABLE};
 use crate::basic::AnyResult;
-use super::state::{HistoryState, STATE_TABLE};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs::File;
@@ -212,7 +213,7 @@ impl PrimitiveStateTable {
 	fn export(&self) -> AnyResult<()> {
 		let mut writer: BufWriter<File> = BufWriter::new(File::create(Path::new("map.gexf"))?);
 
-		writer.write(br#"<?xml version="1.0" encoding="UTF-8"?>
+		writer.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
 <gexf xmlns="http://gexf.net/1.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://gexf.net/1.3 http://gexf.net/1.3/gexf.xsd" version="1.3">
 	<meta lastmodifieddate="2009-03-20">
 		<creator>Gephi.org</creator>
@@ -235,7 +236,7 @@ impl PrimitiveStateTable {
 			let second: usize = state.second as usize;
 			let third: usize = state.third as usize;
 
-			writer.write(
+			writer.write_all(
 				format!(
 					r#"
 			<node id="{}" label="{},{},{}">
@@ -251,7 +252,7 @@ impl PrimitiveStateTable {
 			)?;
 		}
 
-		writer.write(
+		writer.write_all(
 			br#"
 		</nodes>
 		<edges>"#,
@@ -264,7 +265,7 @@ impl PrimitiveStateTable {
 			let next_if_third = state.next_if_third.id();
 			let next_if_miss = state.next_if_miss.id();
 
-			writer.write(
+			writer.write_all(
 				format!(
 					r#"
 			<edge source="{}" target="{}">
@@ -300,7 +301,7 @@ impl PrimitiveStateTable {
 			)?;
 		}
 
-		writer.write(
+		writer.write_all(
 			br#"
 		</edges>
 	</graph>

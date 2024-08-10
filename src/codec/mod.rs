@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,8 +14,10 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
+mod bridged;
 mod decoder;
 mod encoder;
 mod shared;

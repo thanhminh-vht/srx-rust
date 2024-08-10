@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,11 +14,12 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
-use crate::basic::Buffer;
-use super::bit::Bit;
 use super::state::{BitState, StateInfo};
+use crate::basic::Bit;
+use crate::basic::Buffer;
 
 pub struct SecondaryContext<const SIZE: usize> {
 	context: Buffer<BitState, SIZE>,

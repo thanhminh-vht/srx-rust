@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,8 +14,10 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
+// An u8 in usize footprint
 #[derive(Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Hash, Debug)]
 pub struct Byte(usize);
 
@@ -31,7 +33,7 @@ impl From<u8> for Byte {
 	}
 }
 
-macro_rules! impl_from_unsigned_for_byte {
+macro_rules! impl_from_for_byte {
     ($($t:ty),*) => {
         $(
             impl From<Byte> for $t {
@@ -42,7 +44,7 @@ macro_rules! impl_from_unsigned_for_byte {
 
             impl From<$t> for Byte {
 				fn from(value: $t) -> Self {
-					debug_assert!(value <= 255, "Unexpected value for Byte!");
+					debug_assert!((0..256).contains(&value), "Unexpected value for Byte!");
 					Byte(value as usize)
 				}
             }
@@ -50,24 +52,4 @@ macro_rules! impl_from_unsigned_for_byte {
     };
 }
 
-macro_rules! impl_from_signed_for_byte {
-    ($($t:ty),*) => {
-        $(
-            impl From<Byte> for $t {
-				fn from(value: Byte) -> Self {
-					value.0 as $t
-				}
-            }
-
-            impl From<$t> for Byte {
-				fn from(value: $t) -> Self {
-					debug_assert!(value >= 0 && value <= 255, "Unexpected value for Byte!");
-					Byte(value as usize)
-				}
-            }
-        )*
-    };
-}
-
-impl_from_unsigned_for_byte!(u16, u32, u64, u128, usize);
-impl_from_signed_for_byte!(i16, i32, i64, i128, isize);
+impl_from_for_byte!(i16, i32, i64, i128, isize, u16, u32, u64, u128, usize);

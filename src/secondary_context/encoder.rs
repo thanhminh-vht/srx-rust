@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,25 +14,26 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
-use crate::basic::{AnyResult, Closable, PipedWriter, Writer};
-use crate::secondary_context::Bit;
+use crate::basic::Bit;
+use crate::basic::{AnyResult, BufferedOutputPipe, Closable};
 
 // -----------------------------------------------
 
 pub struct BitEncoder<const SIZE: usize> {
 	low: u32,
 	high: u32,
-	writer: PipedWriter<u8, SIZE>,
+	output: BufferedOutputPipe<u8, SIZE>,
 }
 
 impl<const SIZE: usize> BitEncoder<SIZE> {
-	pub fn new(writer: PipedWriter<u8, SIZE>) -> Self {
+	pub fn new(output: BufferedOutputPipe<u8, SIZE>) -> Self {
 		Self {
 			low: 0,
 			high: 0xFFFFFFFF,
-			writer,
+			output,
 		}
 	}
 
@@ -42,9 +43,9 @@ impl<const SIZE: usize> BitEncoder<SIZE> {
 		debug_assert!((self.high ^ self.low) < 0x01000000);
 		while {
 			// write byte
-			self.writer.write((self.low >> 24) as u8)?;
+			self.output.output((self.low >> 24) as u8)?;
 			// shift new bits into high/low
-			self.low = self.low << 8;
+			self.low <<= 8;
 			self.high = (self.high << 8) | 0xFF;
 			// check condition again
 			(self.high ^ self.low) < 0x01000000
@@ -71,15 +72,14 @@ impl<const SIZE: usize> BitEncoder<SIZE> {
 			self.flush()?;
 		}
 		// oke
-		return Ok(());
+		Ok(())
 	}
 }
 
 impl<const SIZE: usize> Closable<()> for BitEncoder<SIZE> {
 	fn close(mut self) -> AnyResult<()> {
-		// write byte
-		self.writer.write((self.low >> 24) as u8)?;
-		// return the writer
-		self.writer.close()
+		// write last byte and close
+		self.output.output((self.low >> 24) as u8)?;
+		self.output.close()
 	}
 }

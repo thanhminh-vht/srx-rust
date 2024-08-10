@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,21 +14,38 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
-
-use crate::secondary_context::Bit;
-use super::info::{StateInfo, STATE_TABLE};
+use crate::basic::Bit;
 
 // -----------------------------------------------
 
-#[derive(Copy, Clone)]
-pub struct BitState(u16);
+// Split the giant table to another non-rs file to keep IDE happy
+pub const STATE_TABLE: &[StateInfo] = include!("state_table.inc");
 
-impl Default for BitState {
-	fn default() -> Self {
-		Self(0)
+// -----------------------------------------------
+
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct StateInfo(u64);
+
+impl StateInfo {
+	pub const fn new(prediction: u32, next_if_zero: u16, next_if_one: u16) -> Self {
+		Self(((prediction as u64) << 32) | ((next_if_zero as u64) << 16) | (next_if_one as u64))
+	}
+
+	pub fn next(&self, bit: Bit) -> u16 {
+		(if bit.into() { self.0 } else { self.0 >> 16 }) as u16
+	}
+
+	pub fn prediction(&self) -> u32 {
+		(self.0 >> 32) as u32
 	}
 }
+
+// -----------------------------------------------
+
+#[derive(Copy, Clone, Default)]
+pub struct BitState(u16);
 
 impl BitState {
 	pub fn get_info(&self) -> StateInfo {

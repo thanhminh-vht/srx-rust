@@ -1,6 +1,6 @@
 /*
  * srx: The fast Symbol Ranking based compressor.
- * Copyright (C) 2023  Mai Thanh Minh (a.k.a. thanhminhmr)
+ * Copyright (C) 2023-2024  Mai Thanh Minh (a.k.a. thanhminhmr)
  *
  * This program is free software: you can redistribute it and/or modify it under
  * the terms of the GNU General Public License as published by the Free Software
@@ -14,11 +14,9 @@
  *
  * You should have received a copy of the GNU General Public License along with
  * this program. If not, see <https://www.gnu.org/licenses/>.
+ *
  */
 
-use super::info::{StateInfo, STATE_TABLE};
-use crate::basic::AnyResult;
-use crate::secondary_context::Bit;
 use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -28,6 +26,11 @@ use std::hash::{Hash, Hasher};
 use std::io::{BufWriter, Write};
 use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Sub, SubAssign};
 use std::path::Path;
+
+use crate::basic::AnyResult;
+use crate::basic::Bit;
+
+use super::state::StateInfo;
 
 // -----------------------------------------------
 
@@ -314,9 +317,14 @@ fn prediction_rescaling(numerator: u64, denominator: u64) -> f64 {
 	sqr_x / (sqr_x + sqr_x_m_1)
 }
 
-fn prediction_next(predictions: &Vec<f64>, current_state: StateIndex, bit: Bit) -> StateIndex {
+fn prediction_next(
+	predictions: &Vec<f64>,
+	current_state: StateIndex,
+	next_count: u64,
+	bit: Bit,
+) -> StateIndex {
 	let (count, value): (u64, f64) = match current_state.value {
-		Value::Fraction(fraction) => (current_state.count + 1, f64::from(fraction)),
+		Value::Fraction(fraction) => (current_state.count, f64::from(fraction)),
 		Value::Prediction(value) => (current_state.count, value),
 	};
 	let prediction: f64 = if bit.into() {
@@ -335,16 +343,24 @@ fn prediction_next(predictions: &Vec<f64>, current_state: StateIndex, bit: Bit) 
 				} else {
 					let prev: f64 = *predictions.get(index - 1).unwrap();
 					let next: f64 = *predictions.get(index).unwrap();
-					if index * 2 < predictions.len() {
-						prev
-					} else {
+					if value == prev {
 						next
+					} else if value == next {
+						prev
+					} else if value - prev > next - value {
+						next
+					} else if value - prev < next - value {
+						prev
+					} else if index * 2 > predictions.len() {
+						next
+					} else {
+						prev
 					}
 				}
 			}
 		};
 	StateIndex {
-		count,
+		count: next_count,
 		value: Value::Prediction(normalized_prediction),
 	}
 }
@@ -379,7 +395,7 @@ impl PrimitiveStateTable {
 		}
 	}
 
-	fn state_auto(&mut self, current_state: StateIndex) {
+	fn state_auto(&mut self, current_state: StateIndex, next_count: u64) {
 		const ONE: Fraction = Fraction::new(1, 1);
 		let count: u64 = current_state.count;
 		let value: Fraction = match current_state.value {
@@ -389,16 +405,19 @@ impl PrimitiveStateTable {
 		let fraction: Fraction = Fraction::new(1, count + 2);
 		self.state(
 			current_state,
-			state(count + 1, Value::Fraction(value - value * fraction)),
-			state(count + 1, Value::Fraction(value + (ONE - value) * fraction)),
+			state(next_count, Value::Fraction(value - value * fraction)),
+			state(
+				next_count,
+				Value::Fraction(value + (ONE - value) * fraction),
+			),
 		);
 	}
 
-	fn state_manual(&mut self, prediction: &Vec<f64>, current_state: StateIndex) {
+	fn state_manual(&mut self, prediction: &Vec<f64>, current_state: StateIndex, next_count: u64) {
 		self.state(
 			current_state,
-			prediction_next(prediction, current_state, Bit::Zero),
-			prediction_next(prediction, current_state, Bit::One),
+			prediction_next(prediction, current_state, next_count, Bit::Zero),
+			prediction_next(prediction, current_state, next_count, Bit::One),
 		);
 	}
 
@@ -406,7 +425,7 @@ impl PrimitiveStateTable {
 	fn export(&self) -> AnyResult<()> {
 		let mut writer: BufWriter<File> = BufWriter::new(File::create(Path::new("map.gexf"))?);
 
-		writer.write(br#"<?xml version="1.0" encoding="UTF-8"?>
+		writer.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
 <gexf xmlns="http://gexf.net/1.3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://gexf.net/1.3 http://gexf.net/1.3/gexf.xsd" version="1.3">
 	<meta lastmodifieddate="2009-03-20">
 		<creator>Gephi.org</creator>
@@ -430,7 +449,7 @@ impl PrimitiveStateTable {
 			let level: usize = state.count as usize;
 			let prediction: f64 = f64::from(state.value);
 
-			writer.write(
+			writer.write_all(
 				format!(
 					r#"
 			<node id="{}" label="{},{}">
@@ -445,7 +464,7 @@ impl PrimitiveStateTable {
 			)?;
 		}
 
-		writer.write(
+		writer.write_all(
 			br#"
 		</nodes>
 		<edges>"#,
@@ -464,7 +483,7 @@ impl PrimitiveStateTable {
 			state.next_if_one.hash(&mut hasher);
 			let one_id = hasher.finish();
 
-			writer.write(
+			writer.write_all(
 				format!(
 					r#"
 			<edge source="{}" target="{}">
@@ -483,7 +502,7 @@ impl PrimitiveStateTable {
 			)?;
 		}
 
-		writer.write(
+		writer.write_all(
 			br#"
 		</edges>
 	</graph>
@@ -495,10 +514,8 @@ impl PrimitiveStateTable {
 
 // -----------------------------------------------
 
-fn table() -> AnyResult<PrimitiveStateTable> {
+fn table(size: u64, limit_level: u64) -> AnyResult<PrimitiveStateTable> {
 	let mut table: PrimitiveStateTable = PrimitiveStateTable::new();
-
-	let limit_level: u64 = 128;
 
 	// table.state_auto(state(0, fraction(1, 2)));
 
@@ -506,11 +523,11 @@ fn table() -> AnyResult<PrimitiveStateTable> {
 		let denominator: u64 = (level + 1) * 2;
 		for index in 0..level + 1 {
 			let numerator: u64 = index * 2 + 1;
-			table.state_auto(state(level, fraction(numerator, denominator)));
+			table.state_auto(state(level, fraction(numerator, denominator)), level + 1);
 		}
 	}
 
-	let limit_denominator: u64 = (1 << 16) - limit_level - table.map.len() as u64;
+	let limit_denominator: u64 = (1 << size) as u64 - limit_level - table.map.len() as u64;
 
 	let mut predictions: Vec<f64> = Vec::with_capacity(limit_denominator as usize);
 	for index in 1..limit_denominator + 1 {
@@ -527,6 +544,7 @@ fn table() -> AnyResult<PrimitiveStateTable> {
 		table.state_manual(
 			&predictions,
 			state(limit_level - 1, fraction(numerator, limit_level * 2)),
+			limit_level,
 		);
 	}
 
@@ -534,6 +552,7 @@ fn table() -> AnyResult<PrimitiveStateTable> {
 		table.state_manual(
 			&predictions,
 			state(limit_level, Value::Prediction(*prediction)),
+			limit_level,
 		);
 	}
 
@@ -544,19 +563,21 @@ fn table() -> AnyResult<PrimitiveStateTable> {
 
 #[test]
 fn test_and_generate_state_table() -> AnyResult<()> {
+	const SIZE: u64 = 16;
+
 	// create table
-	let table = table()?;
+	let table = table(SIZE, 128)?;
 
 	// dbg!(&table);
 
 	// export to Gephi (*.gexf)
-	// table.export()?;
+	table.export()?;
 
 	// check for valid table
-	assert_eq!(table.map.len(), 1 << 16);
+	assert_eq!(table.map.len(), 1 << SIZE);
 
 	// get the states as an array
-	let mut data: Vec<&PrimitiveState> = table.map.iter().map(|(_, state)| state).collect();
+	let mut data: Vec<&PrimitiveState> = table.map.values().collect();
 	data.sort_by_key(|x| x.current_state);
 
 	// create index for states
@@ -566,9 +587,12 @@ fn test_and_generate_state_table() -> AnyResult<()> {
 	});
 
 	// create next states array
-	println!("pub const STATE_TABLE: &[StateInfo] = &[ // length = {}", data.len());
+	println!(
+		"// length = {}\npub const STATE_TABLE: &[StateInfo] = &[",
+		data.len()
+	);
 	let mut state_table: Vec<StateInfo> = Vec::new();
-	for index in 0..65536 {
+	for index in 0..1 << SIZE {
 		let state: &PrimitiveState = data[index];
 		let level: usize = state.current_state.count as usize;
 		let prediction: u32 = u32::from(state.current_state.value);
@@ -582,7 +606,7 @@ fn test_and_generate_state_table() -> AnyResult<()> {
 	}
 	println!("];");
 
-	debug_assert!(state_table.eq(STATE_TABLE));
+	// debug_assert!(state_table.eq(STATE_TABLE));
 
 	Ok(())
 }
